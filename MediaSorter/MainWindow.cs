@@ -92,7 +92,7 @@ public sealed partial class MainWindow : Window
     }
     private void Build()
     {
-        StopPreview(); operationControls.Clear(); panels.Clear();
+        StopPreview(); previewItems.Clear(); navigationList = null; operationControls.Clear(); panels.Clear();
         root = new Grid { Padding = new Thickness(22, 12, 22, 12), RowSpacing = 12, RequestedTheme = preferences.Theme switch { "dark" => ElementTheme.Dark, "light" => ElementTheme.Light, _ => ElementTheme.Default } };
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
@@ -106,9 +106,9 @@ public sealed partial class MainWindow : Window
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         SetTitleBar(heading);
         workspace = new Grid();
-        workspace.ColumnDefinitions.Add(new() { Width = new GridLength(preferences.SplitX, GridUnitType.Star), MinWidth = 300 });
+        workspace.ColumnDefinitions.Add(new() { Width = new GridLength(preferences.SplitX, GridUnitType.Star), MinWidth = 120 });
         workspace.ColumnDefinitions.Add(new() { Width = new GridLength(10) });
-        workspace.ColumnDefinitions.Add(new() { Width = new GridLength(1 - preferences.SplitX, GridUnitType.Star), MinWidth = 340 });
+        workspace.ColumnDefinitions.Add(new() { Width = new GridLength(1 - preferences.SplitX, GridUnitType.Star), MinWidth = 120 });
         leftColumn = PanelColumn(preferences.SplitY); rightColumn = PanelColumn(preferences.SplitYRight);
         workspace.Children.Add(leftColumn); Grid.SetColumn(rightColumn, 2); workspace.Children.Add(rightColumn);
         Grid.SetRow(workspace, 1); root.Children.Add(workspace);
@@ -186,21 +186,23 @@ public sealed partial class MainWindow : Window
     private Grid PanelColumn(double ratio)
     {
         var grid = new Grid();
-        grid.RowDefinitions.Add(new() { Height = new GridLength(ratio, GridUnitType.Star), MinHeight = 200 });
+        grid.RowDefinitions.Add(new() { Height = new GridLength(ratio, GridUnitType.Star), MinHeight = 80 });
         grid.RowDefinitions.Add(new() { Height = new GridLength(10) });
-        grid.RowDefinitions.Add(new() { Height = new GridLength(1 - ratio, GridUnitType.Star), MinHeight = 200 });
+        grid.RowDefinitions.Add(new() { Height = new GridLength(1 - ratio, GridUnitType.Star), MinHeight = 80 });
         return grid;
     }
     private void ResizeVertical(double delta)
     {
-        if (workspace.ActualWidth <= 680) return;
-        preferences.SplitX = Math.Clamp(preferences.SplitX + delta / (workspace.ActualWidth - 10), .25, .7);
+        if (workspace.ActualWidth <= 250) return;
+        var minimum = 120 / (workspace.ActualWidth - 10);
+        preferences.SplitX = Math.Clamp(preferences.SplitX + delta / (workspace.ActualWidth - 10), minimum, 1 - minimum);
         workspace.ColumnDefinitions[0].Width = new(preferences.SplitX, GridUnitType.Star); workspace.ColumnDefinitions[2].Width = new(1 - preferences.SplitX, GridUnitType.Star);
     }
     private void ResizeHorizontal(Grid column, double delta, bool right)
     {
-        if (column.ActualHeight <= 420) return;
-        var ratio = Math.Clamp((right ? preferences.SplitYRight : preferences.SplitY) + delta / (column.ActualHeight - 10), .25, .75);
+        if (column.ActualHeight <= 170) return;
+        var minimum = 80 / (column.ActualHeight - 10);
+        var ratio = Math.Clamp((right ? preferences.SplitYRight : preferences.SplitY) + delta / (column.ActualHeight - 10), minimum, 1 - minimum);
         if (right) preferences.SplitYRight = ratio; else preferences.SplitY = ratio;
         column.RowDefinitions[0].Height = new(ratio, GridUnitType.Star); column.RowDefinitions[2].Height = new(1 - ratio, GridUnitType.Star);
         PositionGrip();
@@ -245,7 +247,15 @@ public sealed partial class MainWindow : Window
     {
         var list = new ListView { SelectionMode = ListViewSelectionMode.Extended, IsItemClickEnabled = false, HorizontalContentAlignment = HorizontalAlignment.Stretch };
         list.ItemTemplate = (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load("<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'><Grid Padding='4,7' ColumnSpacing='10'><Grid.ColumnDefinitions><ColumnDefinition Width='28'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions><FontIcon Glyph='{Binding Glyph}' FontSize='21' Opacity='.7'/><StackPanel Grid.Column='1' Spacing='3'><TextBlock Text='{Binding Name}' TextTrimming='CharacterEllipsis'/><TextBlock Text='{Binding Detail}' FontSize='11' Opacity='.55' TextTrimming='CharacterEllipsis'/></StackPanel></Grid></DataTemplate>");
-        list.SelectionChanged += (_, _) => { if (list.SelectedItem is FileEntry entry) _ = ShowEntry(entry); };
+        list.SelectionChanged += (_, _) =>
+        {
+            if (syncingPreviewSelection) return;
+            if (list.SelectedItem is FileEntry entry)
+            {
+                SetPreviewItems(list.Items.OfType<FileEntry>(), list);
+                _ = ShowEntry(entry);
+            }
+        };
         list.DoubleTapped += (_, _) => { if (list.SelectedItem is FileEntry entry && entry.IsDirectory && output) { outputCurrent = entry.Path; _ = RefreshOutput(); } };
         if (output)
         {
@@ -271,6 +281,19 @@ public sealed partial class MainWindow : Window
             var accelerator = new KeyboardAccelerator { Key = VirtualKey.M, Modifiers = VirtualKeyModifiers.Control };
             accelerator.Invoked += (sender, e) => { if (!busy) _ = Merge(); e.Handled = true; }; list.KeyboardAccelerators.Add(accelerator);
         }
+        if (!output)
+        {
+            var menu = new MenuFlyout();
+            var delete = new MenuFlyoutItem { Text = T("Delete") };
+            delete.Click += (_, _) => { if (!busy) _ = Delete(true); }; menu.Items.Add(delete); list.ContextFlyout = menu;
+            list.RightTapped += (_, e) =>
+            {
+                DependencyObject? node = e.OriginalSource as DependencyObject;
+                while (node != null && node is not ListViewItem) node = VisualTreeHelper.GetParent(node);
+                if (node is ListViewItem container && list.ItemFromContainer(container) is FileEntry entry && !list.SelectedItems.Contains(entry)) { list.SelectedItems.Clear(); list.SelectedItem = entry; }
+            };
+            list.KeyDown += (_, e) => { if (!busy && e.Key == VirtualKey.Delete) { e.Handled = true; _ = Delete(true); } };
+        }
         return list;
     }
     private UIElement BuildSource()
@@ -278,7 +301,10 @@ public sealed partial class MainWindow : Window
         var grid = SectionGrid(3); grid.Children.Add(FolderBar(true)); sourceList = FileList(false); Grid.SetRow(sourceList, 1); grid.Children.Add(sourceList);
         count = Text(T("ChooseSource"), 12, true); count.VerticalAlignment = VerticalAlignment.Center;
         var footer = new Grid(); footer.ColumnDefinitions.Add(new()); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.Children.Add(count);
-        var refresh = Action("Refresh", () => { _ = RefreshSource(); _ = RefreshOutput(); }, "\uE72C"); Grid.SetColumn(refresh, 1); footer.Children.Add(refresh);
+        var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        tools.Children.Add(Action("Delete", () => _ = Delete(true), "\uE74D"));
+        tools.Children.Add(Action("Refresh", () => { _ = RefreshSource(); _ = RefreshOutput(); }, "\uE72C"));
+        Grid.SetColumn(tools, 1); footer.Children.Add(tools);
         Grid.SetRow(footer, 2); grid.Children.Add(footer); return grid;
     }
     private UIElement BuildOutput()
@@ -290,14 +316,14 @@ public sealed partial class MainWindow : Window
     }
     private UIElement BuildSettings()
     {
-        var tabs = new TabView { IsAddTabButtonVisible = false, CanDragTabs = false, CanReorderTabs = false, TabWidthMode = TabViewWidthMode.SizeToContent };
+        var tabs = new Pivot();
         var organize = new StackPanel { Spacing = 10, Margin = new Thickness(2, 10, 2, 4) };
         organize.Children.Add(Text(T("Pattern"), 13, true));
         var patternBar = new Grid { ColumnSpacing = 7 }; patternBar.ColumnDefinitions.Add(new()); patternBar.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         pattern = new ComboBox { IsEditable = true, HorizontalAlignment = HorizontalAlignment.Stretch, ItemsSource = preferences.Patterns, Text = preferences.Pattern };
         pattern.SelectionChanged += (_, _) => UpdateExample(); pattern.TextSubmitted += (_, _) => UpdateExample(); pattern.LostFocus += (_, _) => UpdateExample(); operationControls.Add(pattern);
         patternBar.Children.Add(pattern); var save = Action("Save", SavePattern, "\uE74E"); Grid.SetColumn(save, 1); patternBar.Children.Add(save); organize.Children.Add(patternBar);
-        example = Text("", 18); example.Foreground = accent; organize.Children.Add(example); UpdateExample();
+        example = Text("", 14); organize.Children.Add(example); UpdateExample();
         var legend = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
         foreach (var (token, key) in new[] { ("yyyy / yy", "Year"), ("MM / mm", "Month"), ("dd", "Day") })
         {
@@ -307,18 +333,15 @@ public sealed partial class MainWindow : Window
             legend.Children.Add(new Border { Child = chip, Padding = new Thickness(8, 5, 8, 5), CornerRadius = new CornerRadius(6), Background = new SolidColorBrush(ColorHelper.FromArgb(15, 120, 110, 220)) });
         }
         organize.Children.Add(legend);
-        var help = new Expander { Header = T("PatternGuide"), HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Content = Text(T("PatternHelp"), 12, true) };
-        organize.Children.Add(help);
         var options = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14 };
         filter = new ComboBox { ItemsSource = new[] { T("AllMedia"), T("Photos"), T("Videos") }, SelectedIndex = 0, MinWidth = 155 }; filter.SelectionChanged += (_, _) => { if (sourceList != null) _ = RefreshSource(); }; operationControls.Add(filter);
         recursive = new CheckBox { Content = T("Recursive"), IsChecked = preferences.Recursive }; recursive.Click += (_, _) => { preferences.Recursive = recursive.IsChecked == true; SaveSettings(); _ = RefreshSource(); }; operationControls.Add(recursive);
         options.Children.Add(filter); options.Children.Add(recursive); organize.Children.Add(options);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        var sort = Action("Sort", () => _ = Sort(false), "\uE768"); sort.Background = accent; sort.Foreground = new SolidColorBrush(Colors.White); actions.Children.Add(sort); actions.Children.Add(Action("DryRun", () => _ = Sort(true), "\uE890")); organize.Children.Add(actions);
-        organize.Children.Add(Text(T("DatePolicy"), 12, true));
-        tabs.TabItems.Add(new TabViewItem { Header = T("SortTab"), IsClosable = false, Content = new ScrollViewer { Content = organize } });
+        var sort = Action("Sort", () => _ = Sort(), "\uE768"); sort.Background = accent; sort.Foreground = new SolidColorBrush(Colors.White); actions.Children.Add(sort); organize.Children.Add(actions);
+        tabs.Items.Add(new PivotItem { Header = T("SortTab"), Content = new ScrollViewer { Content = organize } });
         info = Text(T("InfoEmpty"), 13); info.IsTextSelectionEnabled = true; info.Margin = new Thickness(4, 12, 4, 4);
-        tabs.TabItems.Add(new TabViewItem { Header = T("InfoTab"), IsClosable = false, Content = new ScrollViewer { Content = info } });
+        tabs.Items.Add(new PivotItem { Header = T("InfoTab"), Content = new ScrollViewer { Content = info } });
         var prefs = new StackPanel { Spacing = 10, Margin = new Thickness(4, 12, 4, 4) };
         prefs.Children.Add(Text(T("Theme"), 13, true));
         var themes = new ComboBox { ItemsSource = new[] { T("System"), T("Light"), T("Dark") }, SelectedIndex = preferences.Theme == "light" ? 1 : preferences.Theme == "dark" ? 2 : 0 };
@@ -329,13 +352,17 @@ public sealed partial class MainWindow : Window
         languages.SelectionChanged += (_, _) => { if (languages.SelectedIndex < 0) return; preferences.Language = codes[languages.SelectedIndex]; SaveSettings(); loc.Load(preferences.Language); Build(); }; prefs.Children.Add(languages);
         prefs.Children.Add(Text(T("Portable"), 12, true));
         prefs.Children.Add(Action("Journal", () => { System.IO.Directory.CreateDirectory(Path.Combine(Preferences.DataDirectory, "logs")); Launch(Path.Combine(Preferences.DataDirectory, "logs")); }, "\uE8A5", false));
-        tabs.TabItems.Add(new TabViewItem { Header = T("AppTab"), IsClosable = false, Content = new ScrollViewer { Content = prefs } }); return tabs;
+        tabs.Items.Add(new PivotItem { Header = T("AppTab"), Content = new ScrollViewer { Content = prefs } }); return tabs;
     }
     private UIElement BuildPreview()
     {
         previewHost = new Border { CornerRadius = new CornerRadius(9), Background = new SolidColorBrush(ColorHelper.FromArgb(12, 128, 128, 128)), Child = EmptyPreview() };
         previewHost.SizeChanged += (_, _) => FitPreview();
-        return previewHost;
+        var grid = new Grid { RowSpacing = 8 };
+        grid.RowDefinitions.Add(new()); grid.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        grid.Children.Add(previewHost);
+        var navigation = BuildPreviewNavigation(); Grid.SetRow(navigation, 1); grid.Children.Add(navigation);
+        return grid;
     }
     private void FitPreview()
     {
@@ -366,7 +393,7 @@ public sealed partial class MainWindow : Window
         {
             var picker = new FolderPicker(); picker.FileTypeFilter.Add("*"); WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
             var folder = await picker.PickSingleFolderAsync(); if (folder == null) return;
-            StopPreview();
+            StopPreview(); SetPreviewItems(Array.Empty<FileEntry>(), null);
             if (source) { sourcePath = folder.Path; outputRoot = Path.Combine(sourcePath, "out"); outputCurrent = outputRoot; sourceBox.Text = sourcePath; await RefreshSource(); await RefreshOutput(); }
             else { if (!string.IsNullOrEmpty(sourcePath) && MediaFiles.IsWithin(sourcePath, folder.Path)) throw new ArgumentException("OutputInvalid"); outputRoot = folder.Path; outputCurrent = outputRoot; await RefreshOutput(); await RefreshSource(); }
         }
@@ -389,6 +416,7 @@ public sealed partial class MainWindow : Window
             var entries = await Task.Run(() => MediaFiles.Enumerate(path, output, deep, kind, CancellationToken.None).Select(x => Entry(x)).OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ToList());
             if (version != sourceVersion) return;
             sourceList.ItemsSource = entries; count.Text = $"{entries.Count:N0} {T("Files")}";
+            if (navigationList == sourceList) SetPreviewItems(entries, sourceList);
         }
         catch (Exception ex) { if (version == sourceVersion) count.Text = T(ex.Message); }
     }
@@ -400,7 +428,7 @@ public sealed partial class MainWindow : Window
         try
         {
             var entries = await Task.Run(() => System.IO.Directory.EnumerateDirectories(path).Where(x => (File.GetAttributes(x) & FileAttributes.ReparsePoint) == 0).Select(x => Entry(x, true)).OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).Concat(System.IO.Directory.EnumerateFiles(path).Where(x => (File.GetAttributes(x) & FileAttributes.ReparsePoint) == 0).Select(x => Entry(x)).OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase)).ToList());
-            if (version == outputVersion) outputList.ItemsSource = entries;
+            if (version == outputVersion) { outputList.ItemsSource = entries; if (navigationList == outputList) SetPreviewItems(entries, outputList); }
         }
         catch (Exception ex) { if (version == outputVersion) status.Text = T(ex.Message); }
     }
@@ -426,10 +454,12 @@ public sealed partial class MainWindow : Window
         if (oldPlayer != null) { oldPlayer.Source = null; oldPlayer.Dispose(); }
         oldSource?.Dispose();
         selectedFile = null;
+        UpdatePreviewNavigation();
     }
     private async Task ShowEntry(FileEntry entry)
     {
         StopPreview(); previewCancellation = new(); var token = previewCancellation.Token; selectedFile = entry.Path;
+        UpdatePreviewNavigation();
         try
         {
             if (entry.IsDirectory) { info.Text = entry.Path; await ShowGallery(entry.Path, token); return; }
@@ -476,7 +506,8 @@ public sealed partial class MainWindow : Window
     }
     private async Task ShowGallery(string path, CancellationToken token)
     {
-        var files = await Task.Run(() => System.IO.Directory.EnumerateFiles(path).Where(x => MediaFiles.Kind(x) != null).Take(301).ToList(), token); token.ThrowIfCancellationRequested();
+        var files = await Task.Run(() => System.IO.Directory.EnumerateFiles(path).Where(x => MediaFiles.Kind(x) != null && (File.GetAttributes(x) & FileAttributes.ReparsePoint) == 0).OrderBy(Path.GetFileName, StringComparer.CurrentCultureIgnoreCase).ToList(), token); token.ThrowIfCancellationRequested();
+        SetPreviewItems(files.Select(x => new FileEntry { Path = x }), null);
         var grid = new GridView { SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = true };
         grid.ItemsPanel = (ItemsPanelTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load("<ItemsPanelTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'><ItemsWrapGrid Orientation='Horizontal'/></ItemsPanelTemplate>");
         grid.ItemClick += (_, e) => { if (e.ClickedItem is StackPanel tile && tile.Tag is string file) _ = ShowEntry(Entry(file)); };
@@ -501,7 +532,8 @@ public sealed partial class MainWindow : Window
         sourceList.IsEnabled = !value; outputList.IsEnabled = !value;
         cancel.Visibility = value ? Visibility.Visible : Visibility.Collapsed; progress.Visibility = value ? Visibility.Visible : Visibility.Collapsed; progress.IsIndeterminate = value;
         if (message != null) status.Text = message;
-        if (value) { StopPreview(); operation = new(); } else { operation?.Dispose(); operation = null; }
+        if (value) { StopPreview(); SetPreviewItems(Array.Empty<FileEntry>(), null); operation = new(); } else { operation?.Dispose(); operation = null; }
+        UpdatePreviewNavigation();
     }
     private async Task<ContentDialogResult> Dialog(string title, UIElement content, string? primary = null)
     {
@@ -512,13 +544,10 @@ public sealed partial class MainWindow : Window
     private async Task Error(Exception ex) { status.Text = T(ex.Message); try { await Dialog(T("Error"), Text(T(ex.Message))); } catch { } }
     private async Task<bool> ShowPlan(List<PlanItem> plan, bool allowMove)
     {
-        var panel = new Grid { Width = 720, Height = 440, RowSpacing = 10 }; panel.RowDefinitions.Add(new() { Height = GridLength.Auto }); panel.RowDefinitions.Add(new());
-        panel.Children.Add(Text($"{plan.Count:N0} {T("Files")} · {plan.Count(x => x.Error != null)} {T("Errors")}\n{T("PlanHint")}", 13));
-        var list = new ListView { SelectionMode = ListViewSelectionMode.None, ItemsSource = plan.Select(p => p.Error == null ? $"{p.Source}\n→ {p.Destination}\n{p.Date:yyyy-MM-dd HH:mm} · {T(p.DateSource)}" : $"{p.Source}\n⚠ {T(p.Error)}").ToArray() };
-        list.ItemTemplate = (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load("<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'><TextBlock Text='{Binding}' TextWrapping='Wrap' FontSize='12' Margin='0,6' IsTextSelectionEnabled='True'/></DataTemplate>"); Grid.SetRow(list, 1); panel.Children.Add(list);
+        var panel = BuildPlanPreview(plan);
         return await Dialog(T("Plan"), panel, allowMove && plan.Any(x => x.Error == null) ? T("Sort") : null) == ContentDialogResult.Primary;
     }
-    private async Task Sort(bool dryRun)
+    private async Task Sort()
     {
         if (busy) return;
         try
@@ -532,7 +561,7 @@ public sealed partial class MainWindow : Window
             var plan = await Task.Run(() => engine.PlanAsync(sourcePath, outputRoot, template, deep, kind, reporter, token), token);
             token.ThrowIfCancellationRequested();
             if (plan.Count == 0) { status.Text = T("NoItems"); return; }
-            if (!await ShowPlan(plan, !dryRun) || dryRun) { status.Text = $"{T("Plan")}: {plan.Count:N0} {T("Files")}"; return; }
+            if (!await ShowPlan(plan, true)) { status.Text = $"{T("Plan")}: {plan.Count:N0} {T("Files")}"; return; }
             token.ThrowIfCancellationRequested();
             await Execute(plan, token);
         }
@@ -567,10 +596,12 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex) { await Error(ex); }
     }
-    private async Task Delete()
+    private async Task Delete(bool fromSource = false)
     {
-        if (busy || outputList.SelectedItems.Count == 0) return;
-        var selected = outputList.SelectedItems.Cast<FileEntry>().ToArray();
+        var list = fromSource ? sourceList : outputList;
+        var allowedRoot = fromSource ? sourcePath : outputRoot;
+        if (busy || list.SelectedItems.Count == 0) return;
+        var selected = list.SelectedItems.Cast<FileEntry>().ToArray();
         if (await Dialog(T("ConfirmDelete"), Text($"{selected.Length} {T("Selected")}\n\n{T("ConfirmDeleteBody")}"), T("Delete")) != ContentDialogResult.Primary) return;
         SetBusy(true, T("Delete"));
         try
@@ -583,7 +614,7 @@ public sealed partial class MainWindow : Window
                 {
                     await Task.Run(() =>
                     {
-                        if (!MediaFiles.IsWithin(entry.Path, outputRoot) || entry.Path.Equals(outputRoot, StringComparison.OrdinalIgnoreCase)) throw new IOException("OutputInvalid");
+                        if (!MediaFiles.IsWithin(entry.Path, allowedRoot) || entry.Path.Equals(allowedRoot, StringComparison.OrdinalIgnoreCase) || (fromSource && entry.IsDirectory)) throw new IOException("OutputInvalid");
                         SortEngine.RejectReparseAncestors(entry.IsDirectory ? entry.Path : Path.GetDirectoryName(entry.Path)!);
                         if (entry.IsDirectory) FileSystem.DeleteDirectory(entry.Path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin, UICancelOption.ThrowException);
                         else FileSystem.DeleteFile(entry.Path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin, UICancelOption.ThrowException);
