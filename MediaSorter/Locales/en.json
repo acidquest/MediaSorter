@@ -1,4 +1,5 @@
 {
+  "MiscCleanupNotice": "After a successful move, emptied source folders will go to the Recycle Bin. Folders with remaining files will be kept.",
   "EmbeddedDate": "Embedded creation date",
   "Cut": "Cut", "Paste": "Paste", "Move": "Move", "ToMisc": "To Misc", "SelectFiles": "Select one or more files.", "CutReady": "Files ready to move", "PasteHint": "Open the destination folder and choose Paste (Ctrl+V).", "PasteEmpty": "Select files and choose Cut (Ctrl+X) first.", "AlreadyThere": "Files are already in this folder.", "ManualTransfer": "Move to selected folder",
   "FoldersCount": "Folders", "FilesCount": "Files",

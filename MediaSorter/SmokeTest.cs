@@ -17,6 +17,13 @@ public sealed partial class MainWindow
         {
             await Task.Delay(500);
             Check(root.IsLoaded && workspace.ActualWidth > 500 && panels.Count == 4, "Four panels loaded and measured");
+            var toolbarLabels = libraryToolbar.Children.Cast<Microsoft.UI.Xaml.Controls.Button>().SelectMany(button => ((Microsoft.UI.Xaml.Controls.StackPanel)button.Content).Children.OfType<Microsoft.UI.Xaml.Controls.TextBlock>()).ToArray();
+            Check(libraryToolbarFullWidth > 300 && toolbarLabels.Length == 7, "Library toolbar measures all seven action labels");
+            UpdateLibraryToolbar(libraryToolbarFullWidth - 20);
+            Check(toolbarLabels.All(x => x.Visibility == Visibility.Collapsed), "Narrow library toolbar switches to icons");
+            UpdateLibraryToolbar(libraryToolbarFullWidth + 20);
+            Check(toolbarLabels.All(x => x.Visibility == Visibility.Visible), "Wide library toolbar restores labels");
+            Check(libraryToolbar.Children.Cast<Microsoft.UI.Xaml.Controls.Button>().All(button => Microsoft.UI.Xaml.Controls.ToolTipService.GetToolTip(button) != null && !string.IsNullOrEmpty(Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(button))), "Icon buttons retain tooltips and accessible names");
             await ShowEntry(Entry(Path.Combine(fixtureDirectory, "camera.jpg")));
             Check(previewImage?.Source != null, "JPEG preview decoded");
             Check(Math.Abs(previewImage!.Width - previewHost.ActualWidth) < 2 && Math.Abs(previewImage.Height - previewHost.ActualHeight) < 2, "Photo fits preview viewport");
@@ -114,6 +121,16 @@ public sealed partial class MainWindow
             var miscResults = await Sorter.Core.SortEngine.ExecuteAsync(miscPlan, Path.Combine(navigationRoot, "journal.jsonl"), null, default);
             ApplyTransferResults(miscResults);
             Check(miscResults.Single().Success && !File.Exists(miscSource) && File.Exists(existingMisc) && File.Exists(miscPlan[0].Destination), "Misc moves without keeping originals or overwriting");
+            Directory.CreateDirectory(Path.Combine(childPath, "empty-nested"));
+            await CleanupMiscFolders(new[] { Entry(childPath, true) }, miscPlan, Array.Empty<Sorter.Core.MoveResult>(), miscPath, default);
+            Check(Directory.Exists(childPath), "Incomplete transfers do not remove source folders");
+            var keepNote = Path.Combine(childPath, "keep.txt"); await File.WriteAllTextAsync(keepNote, "Synthetic non-media fixture");
+            await CleanupMiscFolders(new[] { Entry(childPath, true) }, miscPlan, miscResults, miscPath, default);
+            Check(File.Exists(keepNote), "Misc cleanup preserves folders containing non-media files");
+            File.Delete(keepNote);
+            await CleanupMiscFolders(new[] { Entry(childPath, true), Entry(miscPath, true), Entry(outputRoot, true) }, miscPlan, miscResults, miscPath, default);
+            Check(!Directory.Exists(childPath) && !outputItems.Any(x => x.Path == childPath), "Successful whole-folder transfer recycles emptied tree and removes list entry");
+            Check(Directory.Exists(miscPath) && Directory.Exists(outputRoot), "Misc cleanup preserves destination and library root");
             await ShowGallery(miscPath, default);
             var miscGallery = (Microsoft.UI.Xaml.Controls.GridView)previewHost.Child;
             Check(miscGallery.Items.Cast<Microsoft.UI.Xaml.Controls.StackPanel>().All(tile => ((Microsoft.UI.Xaml.Controls.Image)tile.Children[0]).Stretch == Microsoft.UI.Xaml.Media.Stretch.Uniform), "Thumbnails fit portrait images without cropping");

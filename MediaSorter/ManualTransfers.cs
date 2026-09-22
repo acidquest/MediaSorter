@@ -52,13 +52,58 @@ public sealed partial class MainWindow
             SetBusy(true, T("Working")); var token = operation!.Token;
             var plan = await Task.Run(() => BuildMiscPlan(selected, destination, token), token);
             if (plan.Count == 0) { status.Text = T("NoItems"); return; }
-            if (!await ShowPlan(plan, true, T("ToMisc"))) return;
+            if (!await ShowPlan(plan, true, T("ToMisc"), T("MiscCleanupNotice"))) return;
             var results = await Execute(plan, token);
             ApplyTransferResults(results);
+            await CleanupMiscFolders(selected, plan, results, destination, token);
         }
         catch (OperationCanceledException) { status.Text = T("Cancelled"); }
         catch (Exception ex) { await Error(ex); }
         finally { SetBusy(false); }
+    }
+    private async Task CleanupMiscFolders(IEnumerable<FileEntry> selected, IReadOnlyList<PlanItem> plan, IReadOnlyList<MoveResult> results, string destination, CancellationToken token)
+    {
+        var succeeded = results.Where(x => x.Success).Select(x => x.Item.Source).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var removed = new List<FileEntry>(); var errors = new List<string>();
+        var offset = FindScrollViewer(outputList)?.VerticalOffset ?? 0;
+        foreach (var folder in selected.Where(x => x.IsDirectory))
+        {
+            if (token.IsCancellationRequested) break;
+            var path = Path.GetFullPath(folder.Path);
+            if (!MediaFiles.IsWithin(path, outputRoot) || path.Equals(Path.TrimEndingDirectorySeparator(outputRoot), StringComparison.OrdinalIgnoreCase)
+                || MediaFiles.IsWithin(path, destination) || MediaFiles.IsWithin(destination, path)) continue;
+            var folderPlan = plan.Where(x => MediaFiles.IsWithin(x.Source, path)).ToArray();
+            if (folderPlan.Length == 0 || folderPlan.Any(x => !succeeded.Contains(x.Source))) continue;
+            try
+            {
+                var deleted = await Task.Run(() =>
+                {
+                    SortEngine.RejectReparseAncestors(path);
+                    if (!HasOnlyEmptyDirectories(path)) return false;
+                    token.ThrowIfCancellationRequested();
+                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(path,
+                        Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                        Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin,
+                        Microsoft.VisualBasic.FileIO.UICancelOption.ThrowException);
+                    return true;
+                });
+                if (deleted) removed.Add(folder);
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex) { errors.Add(folder.Name + ": " + T(ex.Message)); }
+        }
+        RemoveOutputEntries(removed, offset);
+        if (errors.Count > 0) await Dialog(T("Errors"), Text(string.Join("\n", errors)));
+    }
+    private static bool HasOnlyEmptyDirectories(string path)
+    {
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) return false;
+        foreach (var entry in Directory.EnumerateFileSystemEntries(path))
+        {
+            var attributes = File.GetAttributes(entry);
+            if ((attributes & FileAttributes.ReparsePoint) != 0 || (attributes & FileAttributes.Directory) == 0 || !HasOnlyEmptyDirectories(entry)) return false;
+        }
+        return true;
     }
     private List<PlanItem> BuildMiscPlan(IEnumerable<FileEntry> selected, string destination, CancellationToken token)
     {

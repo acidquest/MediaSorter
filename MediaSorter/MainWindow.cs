@@ -86,6 +86,7 @@ public sealed partial class MainWindow : Window
         var button = new Button { Content = content, Padding = new Thickness(12, 8, 12, 8) };
         button.Click += (_, _) => action();
         ToolTipService.SetToolTip(button, T(key));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, T(key));
         if (lockWhileBusy) operationControls.Add(button);
         return button;
     }
@@ -326,7 +327,8 @@ public sealed partial class MainWindow : Window
         outputStatistics = Text("", 12, true); outputStatistics.VerticalAlignment = VerticalAlignment.Center;
         footer.Children.Add(outputStatistics); UpdateOutputStatistics();
         tools.HorizontalAlignment = HorizontalAlignment.Right;
-        var scroll = new ScrollViewer { Content = tools, HorizontalAlignment = HorizontalAlignment.Right, HorizontalContentAlignment = HorizontalAlignment.Right, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
+        var scroll = new ScrollViewer { Content = tools, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Right, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
+        ConfigureLibraryToolbar(tools, scroll);
         Grid.SetColumn(scroll, 1); footer.Children.Add(scroll); Grid.SetRow(footer, 2); grid.Children.Add(footer); return grid;
     }
     private UIElement BuildSettings()
@@ -559,9 +561,14 @@ public sealed partial class MainWindow : Window
         return await dialog.ShowAsync();
     }
     private async Task Error(Exception ex) { status.Text = T(ex.Message); try { await Dialog(T("Error"), Text(T(ex.Message))); } catch { } }
-    private async Task<bool> ShowPlan(List<PlanItem> plan, bool allowMove, string? primaryText = null)
+    private async Task<bool> ShowPlan(List<PlanItem> plan, bool allowMove, string? primaryText = null, string? notice = null)
     {
-        var panel = BuildPlanPreview(plan);
+        UIElement panel = BuildPlanPreview(plan);
+        if (notice != null)
+        {
+            var content = new StackPanel { Spacing = 10 };
+            content.Children.Add(Text(notice)); content.Children.Add(panel); panel = content;
+        }
         return await Dialog(T("Plan"), panel, allowMove && plan.Any(x => x.Error == null) ? primaryText ?? T("Sort") : null) == ContentDialogResult.Primary;
     }
     private async Task Sort()
