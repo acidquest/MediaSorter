@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs><linearGradient id="folder" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8b75ff"/><stop offset="1" stop-color="#5543c4"/></linearGradient></defs>
+  <path d="M28 67Q28 45 50 45H97L118 66H206Q228 66 228 88V196Q228 219 205 219H51Q28 219 28 196Z" fill="#aaa0ff"/>
+  <rect x="61" y="27" width="145" height="157" rx="19" transform="rotate(9 133 105)" fill="#d8d1ff"/>
+  <rect x="49" y="38" width="145" height="157" rx="19" fill="#fff"/>
+  <rect x="63" y="53" width="117" height="87" rx="10" fill="#eeeaff"/>
+  <circle cx="151" cy="76" r="12" fill="#ffbe83"/>
+  <path d="M65 128L94 89L118 116L136 99L179 139H65Z" fill="#9482e6"/>
+  <path d="M25 123Q25 105 43 105H98L116 125H211Q231 125 229 145L220 204Q218 224 198 224H51Q32 224 30 205Z" fill="url(#folder)"/>
+  <path d="M91 164H167M91 181H147" stroke="white" stroke-width="9" stroke-linecap="round" opacity=".93"/>
+</svg>
