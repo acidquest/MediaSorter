@@ -31,13 +31,21 @@ public sealed partial class MainWindow
                 "Delete" => dark ? ColorHelper.FromArgb(255, 255, 153, 157) : ColorHelper.FromArgb(255, 169, 38, 52),
                 "Merge" or "Paste" or "Save" => dark ? ColorHelper.FromArgb(255, 104, 220, 194) : ColorHelper.FromArgb(255, 0, 110, 91),
                 "ToMisc" => dark ? ColorHelper.FromArgb(255, 244, 198, 111) : ColorHelper.FromArgb(255, 137, 87, 10),
-                _ => dark ? ColorHelper.FromArgb(255, 174, 185, 255) : ColorHelper.FromArgb(255, 77, 82, 174)
+                _ => dark ? ColorHelper.FromArgb(255, 174, 185, 255) : ColorHelper.FromArgb(255, 69, 87, 168)
             };
             var primary = key == "Sort";
-            var fill = primary ? ColorHelper.FromArgb(255, 89, 79, 190) : ColorHelper.FromArgb(dark ? (byte)28 : (byte)18, color.R, color.G, color.B);
+            var lightFill = key switch
+            {
+                "Delete" => ColorHelper.FromArgb(255, 253, 237, 240),
+                "Merge" or "Paste" or "Save" => ColorHelper.FromArgb(255, 231, 245, 240),
+                "ToMisc" => ColorHelper.FromArgb(255, 255, 244, 221),
+                _ => ColorHelper.FromArgb(255, 237, 241, 253)
+            };
+            var fill = primary ? (dark ? ColorHelper.FromArgb(255, 89, 79, 190) : ColorHelper.FromArgb(255, 79, 95, 199))
+                : dark ? ColorHelper.FromArgb(28, color.R, color.G, color.B) : lightFill;
             button.Background = new SolidColorBrush(fill);
             button.Foreground = new SolidColorBrush(primary ? Colors.White : color);
-            button.BorderBrush = new SolidColorBrush(ColorHelper.FromArgb(55, color.R, color.G, color.B));
+            button.BorderBrush = new SolidColorBrush(ColorHelper.FromArgb(dark ? (byte)55 : (byte)35, color.R, color.G, color.B));
             button.CornerRadius = new CornerRadius(8);
             button.Resources["ButtonBackgroundPointerOver"] = new SolidColorBrush(primary ? ColorHelper.FromArgb(255, 108, 96, 211) : ColorHelper.FromArgb(45, color.R, color.G, color.B));
             button.Resources["ButtonBackgroundPressed"] = new SolidColorBrush(primary ? ColorHelper.FromArgb(255, 73, 64, 161) : ColorHelper.FromArgb(65, color.R, color.G, color.B));

@@ -143,7 +143,8 @@ public sealed partial class MainWindow : Window
         var header = new Grid { CanDrag = true, AllowDrop = true, Background = new SolidColorBrush(Colors.Transparent) };
         header.ColumnDefinitions.Add(new()); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var caption = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 9, VerticalAlignment = VerticalAlignment.Center };
-        caption.Children.Add(new FontIcon { Glyph = glyph, FontSize = 17, Foreground = accent }); caption.Children.Add(Text(T(title), 17)); header.Children.Add(caption);
+        caption.Children.Add(new FontIcon { Glyph = glyph, FontSize = 17, Foreground = accent });
+        var captionText = Text(T(title), 17); captionText.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold; caption.Children.Add(captionText); header.Children.Add(caption);
         var move = new Button { Content = new FontIcon { Glyph = "\uE700", FontSize = 14 }, Padding = new Thickness(6), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
         var menu = new MenuFlyout();
         foreach (var other in new[] { "source", "settings", "output", "preview" }.Where(x => x != key))
@@ -164,11 +165,26 @@ public sealed partial class MainWindow : Window
     {
         if (closing) return;
         var dark = root.ActualTheme == ElementTheme.Dark;
+        root.Background = new SolidColorBrush(dark ? Colors.Transparent : ColorHelper.FromArgb(255, 237, 242, 248));
+        accent.Color = dark ? ColorHelper.FromArgb(255, 108, 92, 231) : ColorHelper.FromArgb(255, 79, 95, 199);
         foreach (var card in panels.Values)
         {
-            card.Background = new SolidColorBrush(dark ? ColorHelper.FromArgb(245, 35, 36, 43) : ColorHelper.FromArgb(245, 255, 255, 255));
-            card.BorderBrush = new SolidColorBrush(dark ? ColorHelper.FromArgb(255, 57, 58, 68) : ColorHelper.FromArgb(255, 225, 226, 234));
+            card.Background = new SolidColorBrush(dark ? ColorHelper.FromArgb(245, 35, 36, 43) : Colors.White);
+            card.BorderBrush = new SolidColorBrush(dark ? ColorHelper.FromArgb(255, 57, 58, 68) : ColorHelper.FromArgb(255, 212, 222, 235));
         }
+        foreach (var input in operationControls.OfType<ComboBox>().Cast<Control>().Concat(new Control[] { sourceBox, outputBox }))
+        {
+            if (dark) { input.ClearValue(Control.BackgroundProperty); input.ClearValue(Control.BorderBrushProperty); input.ClearValue(Control.ForegroundProperty); }
+            else
+            {
+                input.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 247, 249, 252));
+                input.BorderBrush = new SolidColorBrush(ColorHelper.FromArgb(255, 197, 210, 226));
+                input.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 34, 49, 71));
+            }
+        }
+        previewHost.Background = new SolidColorBrush(dark ? ColorHelper.FromArgb(12, 128, 128, 128) : ColorHelper.FromArgb(255, 242, 246, 251));
+        previewHost.BorderBrush = new SolidColorBrush(dark ? Colors.Transparent : ColorHelper.FromArgb(255, 222, 230, 240));
+        previewHost.BorderThickness = new Thickness(dark ? 0 : 1);
         var bar = AppWindow?.TitleBar;
         if (bar == null) return;
         bar.ButtonBackgroundColor = Colors.Transparent;
@@ -330,7 +346,7 @@ public sealed partial class MainWindow : Window
         outputStatistics = Text("", 12, true); outputStatistics.VerticalAlignment = VerticalAlignment.Center;
         footer.Children.Add(outputStatistics); UpdateOutputStatistics();
         tools.HorizontalAlignment = HorizontalAlignment.Right;
-        var scroll = new ScrollViewer { Content = tools, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Right, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
+        var scroll = new ScrollViewer { Content = tools, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Right, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled };
         libraryToolbar = tools;
         Grid.SetColumn(scroll, 1); footer.Children.Add(scroll); Grid.SetRow(footer, 2); grid.Children.Add(footer); return grid;
     }
@@ -371,7 +387,6 @@ public sealed partial class MainWindow : Window
         var codes = new[] { "system" }.Concat(Localizer.Languages()).ToArray();
         var languages = new ComboBox { ItemsSource = codes.Select(x => x == "system" ? T("System") : x == "ru" ? "Русский" : x == "en" ? "English" : x).ToArray(), SelectedIndex = Math.Max(0, Array.IndexOf(codes, preferences.Language)) }; operationControls.Add(languages);
         languages.SelectionChanged += (_, _) => { if (languages.SelectedIndex < 0) return; preferences.Language = codes[languages.SelectedIndex]; SaveSettings(); loc.Load(preferences.Language); Build(); }; prefs.Children.Add(languages);
-        prefs.Children.Add(Text(T("Portable"), 12, true));
         prefs.Children.Add(Action("Journal", () => { System.IO.Directory.CreateDirectory(Path.Combine(Preferences.DataDirectory, "logs")); Launch(Path.Combine(Preferences.DataDirectory, "logs")); }, "\uE8A5", false));
         tabs.Items.Add(new PivotItem { Header = T("AppTab"), Content = new ScrollViewer { Content = prefs } }); return tabs;
     }

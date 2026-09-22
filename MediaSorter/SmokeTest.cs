@@ -27,6 +27,9 @@ public sealed partial class MainWindow
             var sortButton = operationControls.OfType<Microsoft.UI.Xaml.Controls.Button>().Single(button => Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(button) == T("Sort"));
             Check(ReferenceEquals(sortButton.Parent, filter.Parent) && ReferenceEquals(sortButton.Parent, recursive.Parent), "Sort action shares row with filter and recursive checkbox");
             Check(libraryToolbar.Children.Cast<Microsoft.UI.Xaml.Controls.Button>().All(button => Microsoft.UI.Xaml.Controls.ToolTipService.GetToolTip(button) != null && !string.IsNullOrEmpty(Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(button))), "Icon buttons retain tooltips and accessible names");
+            DependencyObject? toolbarParent = libraryToolbar;
+            while (toolbarParent != null && toolbarParent is not Microsoft.UI.Xaml.Controls.ScrollViewer) toolbarParent = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(toolbarParent);
+            Check(toolbarParent is Microsoft.UI.Xaml.Controls.ScrollViewer toolbarViewport && toolbarViewport.VerticalScrollMode == Microsoft.UI.Xaml.Controls.ScrollMode.Disabled && toolbarViewport.VerticalScrollBarVisibility == Microsoft.UI.Xaml.Controls.ScrollBarVisibility.Disabled, "Library toolbar cannot show vertical scrollbar arrows");
             await ShowEntry(Entry(Path.Combine(fixtureDirectory, "camera.jpg")));
             Check(previewImage?.Source != null, "JPEG preview decoded");
             Check(Math.Abs(previewImage!.Width - previewHost.ActualWidth) < 2 && Math.Abs(previewImage.Height - previewHost.ActualHeight) < 2, "Photo fits preview viewport");
@@ -48,6 +51,8 @@ public sealed partial class MainWindow
             root.RequestedTheme = ElementTheme.Light; await Task.Delay(100);
             Check(darkExampleColor != ((Microsoft.UI.Xaml.Media.SolidColorBrush)example.Foreground).Color && darkButtonColor != ((Microsoft.UI.Xaml.Media.SolidColorBrush)saveButton.Foreground).Color, "Example and action colors adapt to light and dark themes");
             Check(root.ActualTheme == ElementTheme.Light && AppWindow.TitleBar.ButtonForegroundColor != Microsoft.UI.Colors.White, "Light theme caption buttons");
+            Check(((Microsoft.UI.Xaml.Media.SolidColorBrush)root.Background).Color.A == 255 && ((Microsoft.UI.Xaml.Media.SolidColorBrush)panels["output"].Background).Color == Microsoft.UI.Colors.White && ((Microsoft.UI.Xaml.Media.SolidColorBrush)root.Background).Color != Microsoft.UI.Colors.White, "Light theme separates opaque canvas and white cards");
+            Check(((Microsoft.UI.Xaml.Media.SolidColorBrush)saveButton.Background).Color.A == 255 && previewHost.BorderThickness.Left == 1, "Light theme uses solid pastel buttons and framed preview");
             Check(!info.Text.Contains("Compression Type") && info.Text.Contains("2024-03-19"), "Metadata summary prioritizes shooting date");
             await ShowGallery(fixtureDirectory, CancellationToken.None);
             Check(previewHost.Child is Microsoft.UI.Xaml.Controls.GridView gallery && gallery.Items.Count >= 2, "Folder thumbnails loaded");
