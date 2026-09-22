@@ -41,6 +41,7 @@ public sealed partial class MainWindow : Window
     private ProgressBar progress = null!;
     private ListView sourceList = null!, outputList = null!;
     private readonly ObservableCollection<FileEntry> outputItems = [];
+    private readonly ObservableCollection<FileEntry> sourceItems = [];
     private TextBlock outputStatistics = null!;
     private TextBox sourceBox = null!, outputBox = null!;
     private ComboBox pattern = null!, filter = null!;
@@ -258,11 +259,11 @@ public sealed partial class MainWindow : Window
                 _ = ShowEntry(entry);
             }
         };
-        list.DoubleTapped += (_, _) => { if (list.SelectedItem is FileEntry entry && entry.IsDirectory && output) { outputCurrent = entry.Path; _ = RefreshOutput(); } };
+        list.DoubleTapped += (_, _) => { if (list.SelectedItem is FileEntry entry && entry.IsDirectory && output) _ = EnterOutput(entry.Path); };
         if (output)
         {
             var menu = new MenuFlyout();
-            foreach (var (key, handler) in new (string, Action)[] { ("Open", () => OpenSelected()), ("Rename", () => _ = Rename()), ("Merge", () => _ = Merge()), ("Delete", () => _ = Delete()), ("Reveal", () => RevealSelected()) })
+            foreach (var (key, handler) in new (string, Action)[] { ("Open", () => OpenSelected()), ("Rename", () => _ = Rename()), ("Cut", CutSelected), ("Paste", () => _ = PasteFiles()), ("ToMisc", () => _ = MoveToMisc()), ("Merge", () => _ = Merge()), ("Delete", () => _ = Delete()), ("Reveal", () => RevealSelected()) })
             { var item = new MenuFlyoutItem { Text = T(key) }; item.Click += (_, _) => { if (!busy) handler(); }; menu.Items.Add(item); }
             list.ContextFlyout = menu;
             list.RightTapped += (_, e) =>
@@ -282,6 +283,11 @@ public sealed partial class MainWindow : Window
             };
             var accelerator = new KeyboardAccelerator { Key = VirtualKey.M, Modifiers = VirtualKeyModifiers.Control };
             accelerator.Invoked += (sender, e) => { if (!busy) _ = Merge(); e.Handled = true; }; list.KeyboardAccelerators.Add(accelerator);
+            foreach (var (key, action) in new (VirtualKey, Action)[] { (VirtualKey.X, CutSelected), (VirtualKey.V, () => _ = PasteFiles()) })
+            {
+                var shortcut = new KeyboardAccelerator { Key = key, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = list };
+                shortcut.Invoked += (sender, e) => { if (!busy) action(); e.Handled = true; }; list.KeyboardAccelerators.Add(shortcut);
+            }
         }
         if (!output)
         {
@@ -300,7 +306,7 @@ public sealed partial class MainWindow : Window
     }
     private UIElement BuildSource()
     {
-        var grid = SectionGrid(3); grid.Children.Add(FolderBar(true)); sourceList = FileList(false); Grid.SetRow(sourceList, 1); grid.Children.Add(sourceList);
+        var grid = SectionGrid(3); grid.Children.Add(FolderBar(true)); sourceList = FileList(false); sourceList.ItemsSource = sourceItems; Grid.SetRow(sourceList, 1); grid.Children.Add(sourceList);
         count = Text(T("ChooseSource"), 12, true); count.VerticalAlignment = VerticalAlignment.Center;
         var footer = new Grid(); footer.ColumnDefinitions.Add(new()); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.Children.Add(count);
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
@@ -314,6 +320,7 @@ public sealed partial class MainWindow : Window
         var grid = SectionGrid(3); grid.Children.Add(FolderBar(false)); outputList = FileList(true); outputList.ItemsSource = outputItems; Grid.SetRow(outputList, 1); grid.Children.Add(outputList);
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
         tools.Children.Add(Action("Up", Up, "\uE74A")); tools.Children.Add(Action("Rename", () => _ = Rename(), "\uE8AC")); tools.Children.Add(Action("Merge", () => _ = Merge(), "\uE8B5")); tools.Children.Add(Action("Delete", () => _ = Delete(), "\uE74D"));
+        tools.Children.Add(Action("Cut", CutSelected, "\uE8C6")); tools.Children.Add(Action("Paste", () => _ = PasteFiles(), "\uE77F")); tools.Children.Add(Action("ToMisc", () => _ = MoveToMisc(), "\uE8C8"));
         var footer = new Grid { ColumnSpacing = 12 };
         footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new());
         outputStatistics = Text("", 12, true); outputStatistics.VerticalAlignment = VerticalAlignment.Center;
@@ -424,7 +431,7 @@ public sealed partial class MainWindow : Window
             count.Text = T("Loading");
             var entries = await Task.Run(() => MediaFiles.Enumerate(path, output, deep, kind, CancellationToken.None).Select(x => Entry(x)).OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ToList());
             if (version != sourceVersion) return;
-            sourceList.ItemsSource = entries; count.Text = $"{entries.Count:N0} {T("Files")}";
+            sourceItems.Clear(); foreach (var entry in entries) sourceItems.Add(entry); count.Text = $"{entries.Count:N0} {T("Files")}";
             if (navigationList == sourceList) SetPreviewItems(entries, sourceList);
         }
         catch (Exception ex) { if (version == sourceVersion) count.Text = T(ex.Message); }
@@ -441,10 +448,10 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex) { if (version == outputVersion) status.Text = T(ex.Message); }
     }
-    private void Up() { if (outputCurrent == outputRoot || string.IsNullOrWhiteSpace(outputCurrent)) return; var parent = Path.GetDirectoryName(outputCurrent); if (parent != null && MediaFiles.IsWithin(parent, outputRoot)) { outputCurrent = parent; _ = RefreshOutput(); } }
+    private void Up() => _ = NavigateUp();
     private static void Launch(string path) => Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
     private void RevealSelected() { if (outputList.SelectedItem is FileEntry entry) Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{entry.Path}\"") { UseShellExecute = true }); }
-    private void OpenSelected() { if (outputList.SelectedItem is FileEntry entry) { if (entry.IsDirectory) { outputCurrent = entry.Path; _ = RefreshOutput(); } else _ = ShowEntry(entry); } }
+    private void OpenSelected() { if (outputList.SelectedItem is FileEntry entry) { if (entry.IsDirectory) _ = EnterOutput(entry.Path); else _ = ShowEntry(entry); } }
 
     private void StopPreview()
     {
@@ -527,7 +534,7 @@ public sealed partial class MainWindow : Window
         {
             token.ThrowIfCancellationRequested();
             var tile = new StackPanel { Width = 120, Spacing = 4, Margin = new Thickness(4), Tag = file };
-            var image = new Image { Width = 120, Height = 85, Stretch = Stretch.UniformToFill }; tile.Children.Add(image);
+            var image = new Image { Width = 120, Height = 85, Stretch = Stretch.Uniform }; tile.Children.Add(image);
             tile.Children.Add(new TextBlock { Text = Path.GetFileName(file), FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis }); grid.Items.Add(tile);
             try { var storage = await StorageFile.GetFileFromPathAsync(file); using var thumbnail = await storage.GetThumbnailAsync(ThumbnailMode.SingleItem, 160); token.ThrowIfCancellationRequested(); if (thumbnail != null) { var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(thumbnail); image.Source = bitmap; } }
             catch (OperationCanceledException) { throw; }
@@ -544,17 +551,18 @@ public sealed partial class MainWindow : Window
         if (value) { StopPreview(); SetPreviewItems(Array.Empty<FileEntry>(), null); operation = new(); } else { operation?.Dispose(); operation = null; }
         UpdatePreviewNavigation();
     }
-    private async Task<ContentDialogResult> Dialog(string title, UIElement content, string? primary = null)
+    private async Task<ContentDialogResult> Dialog(string title, UIElement content, string? primary = null, bool focusPrimary = false)
     {
         var dialog = new ContentDialog { XamlRoot = root.XamlRoot, RequestedTheme = root.RequestedTheme, Title = title, Content = content, CloseButtonText = T("Close"), PrimaryButtonText = primary ?? "", DefaultButton = ContentDialogButton.Close };
         dialog.Resources["ContentDialogMaxWidth"] = 820d;
+        if (focusPrimary) FocusPrimaryButton(dialog);
         return await dialog.ShowAsync();
     }
     private async Task Error(Exception ex) { status.Text = T(ex.Message); try { await Dialog(T("Error"), Text(T(ex.Message))); } catch { } }
-    private async Task<bool> ShowPlan(List<PlanItem> plan, bool allowMove)
+    private async Task<bool> ShowPlan(List<PlanItem> plan, bool allowMove, string? primaryText = null)
     {
         var panel = BuildPlanPreview(plan);
-        return await Dialog(T("Plan"), panel, allowMove && plan.Any(x => x.Error == null) ? T("Sort") : null) == ContentDialogResult.Primary;
+        return await Dialog(T("Plan"), panel, allowMove && plan.Any(x => x.Error == null) ? primaryText ?? T("Sort") : null) == ContentDialogResult.Primary;
     }
     private async Task Sort()
     {
@@ -595,13 +603,15 @@ public sealed partial class MainWindow : Window
         {
             if (outputList.SelectedItems.Count != 1 || outputList.SelectedItem is not FileEntry entry) throw new InvalidOperationException("InvalidSelection");
             var name = new TextBox { Text = entry.Name, Header = T("Name"), MinWidth = 360 }; name.SelectAll();
-            if (await Dialog(T("Rename"), name, T("Confirm")) != ContentDialogResult.Primary) return;
+            if (await Dialog(T("Rename"), name, T("Confirm"), focusPrimary: true) != ContentDialogResult.Primary) return;
             FolderPattern.ValidateName(name.Text); if (name.Text == entry.Name) return;
             var destination = Path.Combine(Path.GetDirectoryName(entry.Path)!, name.Text);
             if (File.Exists(destination) || System.IO.Directory.Exists(destination)) throw new IOException(T("Name") + ": " + destination);
             StopPreview();
+            ++outputVersion; ++sourceVersion;
+            var offset = FindScrollViewer(outputList)?.VerticalOffset ?? 0;
             await Task.Run(() => { SortEngine.RejectReparseAncestors(Path.GetDirectoryName(entry.Path)!); if (entry.IsDirectory) System.IO.Directory.Move(entry.Path, destination); else File.Move(entry.Path, destination, false); });
-            await RefreshOutput(); await RefreshSource();
+            ReplaceRenamedEntry(entry, destination, offset);
         }
         catch (Exception ex) { await Error(ex); }
     }
@@ -612,10 +622,9 @@ public sealed partial class MainWindow : Window
         if (busy || list.SelectedItems.Count == 0) return;
         var selected = list.SelectedItems.Cast<FileEntry>().ToArray();
         if (await Dialog(T("ConfirmDelete"), Text($"{selected.Length} {T("Selected")}\n\n{T("ConfirmDeleteBody")}"), T("Delete")) != ContentDialogResult.Primary) return;
-        var outputScroll = FindScrollViewer(outputList);
-        var savedOffset = outputScroll?.VerticalOffset ?? 0;
+        var savedOffset = FindScrollViewer(list)?.VerticalOffset ?? 0;
         var removed = new List<FileEntry>();
-        if (!fromSource) ++outputVersion; // Ignore any folder scan started before deletion.
+        if (!fromSource) ++outputVersion; else ++sourceVersion;
         SetBusy(true, T("Delete"));
         try
         {
@@ -641,8 +650,8 @@ public sealed partial class MainWindow : Window
         finally
         {
             if (!fromSource) RemoveOutputEntries(removed, savedOffset);
+            else RemoveSourceEntries(removed, savedOffset);
             SetBusy(false);
-            await RefreshSource();
         }
     }
     private async Task Merge()

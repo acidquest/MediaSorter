@@ -63,6 +63,22 @@ try
     copyItem = copyItem with { Length = copyInfo.Length, ModifiedUtc = copyInfo.LastWriteTimeUtc };
     try { await SortEngine.MoveVerifiedAsync(copyItem, default, forceVerifiedCopy: true); } catch (IOException) { }
     Check(File.Exists(copySource) && File.ReadAllBytes(copyTarget).SequenceEqual(bytes), "verified-copy collision retains original and destination");
+    var transferFolder = Path.Combine(root, "transfer"); Directory.CreateDirectory(transferFolder);
+    var snapshot = FileTransferPlan.Snapshot(copySource);
+    Check(FileTransferPlan.Create(new[] { snapshot }, root, default).Count == 0, "self-paste does not rename files");
+    var transfer = FileTransferPlan.Create(new[] { snapshot, snapshot }, transferFolder, default);
+    Check(transfer.Count == 1, "manual transfer deduplicates selected sources");
+    await File.WriteAllTextAsync(transfer[0].Destination, "existing");
+    transfer = FileTransferPlan.Create(new[] { snapshot }, transferFolder, default);
+    Check(transfer[0].Destination.EndsWith("copy-source (2).jpg"), "manual transfer reserves non-overwriting destination");
+    var transferred = await SortEngine.ExecuteAsync(transfer, Path.Combine(root, "transfer.jsonl"), null, default);
+    Check(transferred.Single().Success && !File.Exists(copySource) && File.ReadAllBytes(transfer[0].Destination).SequenceEqual(bytes), "manual transfer moves original with matching contents");
+    Check(File.ReadAllText(Path.Combine(transferFolder, "copy-source.jpg")) == "existing", "manual transfer preserves existing destination");
+    var stale = FileTransferPlan.Snapshot(transfer[0].Destination);
+    await File.AppendAllTextAsync(stale.Source, "changed after cut");
+    var stalePlan = FileTransferPlan.Create(new[] { stale }, Path.Combine(root, "stale"), default);
+    var staleResults = await SortEngine.ExecuteAsync(stalePlan, Path.Combine(root, "stale.jsonl"), null, default);
+    Check(!staleResults.Single().Success && File.Exists(stale.Source) && !File.Exists(stalePlan[0].Destination), "changes after cut preserve original");
     Console.WriteLine($"All {passed} checks passed.");
 }
 finally

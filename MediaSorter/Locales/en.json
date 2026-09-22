@@ -1,5 +1,6 @@
 {
   "EmbeddedDate": "Embedded creation date",
+  "Cut": "Cut", "Paste": "Paste", "Move": "Move", "ToMisc": "To Misc", "SelectFiles": "Select one or more files.", "CutReady": "Files ready to move", "PasteHint": "Open the destination folder and choose Paste (Ctrl+V).", "PasteEmpty": "Select files and choose Cut (Ctrl+X) first.", "AlreadyThere": "Files are already in this folder.", "ManualTransfer": "Move to selected folder",
   "FoldersCount": "Folders", "FilesCount": "Files",
   "Year": "year", "Month": "month", "Day": "day", "PatternGuide": "Folders and custom text — examples", "Format": "Format", "Size": "Size", "Dimensions": "Resolution", "Duration": "Duration", "Camera": "Camera", "Lens": "Lens", "Exposure": "Shutter speed", "Aperture": "Aperture", "ISO": "ISO", "FocalLength": "Focal length", "Location": "Folder",
   "Tagline": "A place for every memory", "Source": "Source files", "Output": "Organized library", "Settings": "Controls", "Preview": "Viewer",
