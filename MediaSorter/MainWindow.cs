@@ -40,6 +40,8 @@ public sealed partial class MainWindow : Window
     private TextBlock status = null!, count = null!, example = null!, info = null!;
     private ProgressBar progress = null!;
     private ListView sourceList = null!, outputList = null!;
+    private readonly ObservableCollection<FileEntry> outputItems = [];
+    private TextBlock outputStatistics = null!;
     private TextBox sourceBox = null!, outputBox = null!;
     private ComboBox pattern = null!, filter = null!;
     private CheckBox recursive = null!;
@@ -309,10 +311,16 @@ public sealed partial class MainWindow : Window
     }
     private UIElement BuildOutput()
     {
-        var grid = SectionGrid(3); grid.Children.Add(FolderBar(false)); outputList = FileList(true); Grid.SetRow(outputList, 1); grid.Children.Add(outputList);
+        var grid = SectionGrid(3); grid.Children.Add(FolderBar(false)); outputList = FileList(true); outputList.ItemsSource = outputItems; Grid.SetRow(outputList, 1); grid.Children.Add(outputList);
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
         tools.Children.Add(Action("Up", Up, "\uE74A")); tools.Children.Add(Action("Rename", () => _ = Rename(), "\uE8AC")); tools.Children.Add(Action("Merge", () => _ = Merge(), "\uE8B5")); tools.Children.Add(Action("Delete", () => _ = Delete(), "\uE74D"));
-        var scroll = new ScrollViewer { Content = tools, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled }; Grid.SetRow(scroll, 2); grid.Children.Add(scroll); return grid;
+        var footer = new Grid { ColumnSpacing = 12 };
+        footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new());
+        outputStatistics = Text("", 12, true); outputStatistics.VerticalAlignment = VerticalAlignment.Center;
+        footer.Children.Add(outputStatistics); UpdateOutputStatistics();
+        tools.HorizontalAlignment = HorizontalAlignment.Right;
+        var scroll = new ScrollViewer { Content = tools, HorizontalAlignment = HorizontalAlignment.Right, HorizontalContentAlignment = HorizontalAlignment.Right, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
+        Grid.SetColumn(scroll, 1); footer.Children.Add(scroll); Grid.SetRow(footer, 2); grid.Children.Add(footer); return grid;
     }
     private UIElement BuildSettings()
     {
@@ -358,6 +366,7 @@ public sealed partial class MainWindow : Window
     {
         previewHost = new Border { CornerRadius = new CornerRadius(9), Background = new SolidColorBrush(ColorHelper.FromArgb(12, 128, 128, 128)), Child = EmptyPreview() };
         previewHost.SizeChanged += (_, _) => FitPreview();
+        previewHost.AddHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler(PreviewWheelChanged), true);
         var grid = new Grid { RowSpacing = 8 };
         grid.RowDefinitions.Add(new()); grid.RowDefinitions.Add(new() { Height = GridLength.Auto });
         grid.Children.Add(previewHost);
@@ -423,12 +432,12 @@ public sealed partial class MainWindow : Window
     private async Task RefreshOutput()
     {
         var version = ++outputVersion; outputBox.Text = outputCurrent;
-        if (string.IsNullOrWhiteSpace(outputCurrent) || !System.IO.Directory.Exists(outputCurrent)) { outputList.ItemsSource = Array.Empty<FileEntry>(); return; }
+        if (string.IsNullOrWhiteSpace(outputCurrent) || !System.IO.Directory.Exists(outputCurrent)) { outputItems.Clear(); UpdateOutputStatistics(); return; }
         var path = outputCurrent;
         try
         {
             var entries = await Task.Run(() => System.IO.Directory.EnumerateDirectories(path).Where(x => (File.GetAttributes(x) & FileAttributes.ReparsePoint) == 0).Select(x => Entry(x, true)).OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).Concat(System.IO.Directory.EnumerateFiles(path).Where(x => (File.GetAttributes(x) & FileAttributes.ReparsePoint) == 0).Select(x => Entry(x)).OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase)).ToList());
-            if (version == outputVersion) { outputList.ItemsSource = entries; if (navigationList == outputList) SetPreviewItems(entries, outputList); }
+            if (version == outputVersion) { outputItems.Clear(); foreach (var entry in entries) outputItems.Add(entry); UpdateOutputStatistics(); if (navigationList == outputList) SetPreviewItems(entries, outputList); }
         }
         catch (Exception ex) { if (version == outputVersion) status.Text = T(ex.Message); }
     }
@@ -603,6 +612,10 @@ public sealed partial class MainWindow : Window
         if (busy || list.SelectedItems.Count == 0) return;
         var selected = list.SelectedItems.Cast<FileEntry>().ToArray();
         if (await Dialog(T("ConfirmDelete"), Text($"{selected.Length} {T("Selected")}\n\n{T("ConfirmDeleteBody")}"), T("Delete")) != ContentDialogResult.Primary) return;
+        var outputScroll = FindScrollViewer(outputList);
+        var savedOffset = outputScroll?.VerticalOffset ?? 0;
+        var removed = new List<FileEntry>();
+        if (!fromSource) ++outputVersion; // Ignore any folder scan started before deletion.
         SetBusy(true, T("Delete"));
         try
         {
@@ -619,12 +632,18 @@ public sealed partial class MainWindow : Window
                         if (entry.IsDirectory) FileSystem.DeleteDirectory(entry.Path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin, UICancelOption.ThrowException);
                         else FileSystem.DeleteFile(entry.Path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin, UICancelOption.ThrowException);
                     });
+                    removed.Add(entry);
                 }
                 catch (Exception ex) { errors.Add(entry.Name + ": " + T(ex.Message)); }
             }
             status.Text = T("Done"); if (errors.Count > 0) await Dialog(T("Errors"), Text(string.Join("\n", errors)));
         }
-        finally { SetBusy(false); await RefreshOutput(); await RefreshSource(); }
+        finally
+        {
+            if (!fromSource) RemoveOutputEntries(removed, savedOffset);
+            SetBusy(false);
+            await RefreshSource();
+        }
     }
     private async Task Merge()
     {

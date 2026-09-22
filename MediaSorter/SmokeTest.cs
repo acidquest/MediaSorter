@@ -45,6 +45,11 @@ public sealed partial class MainWindow
             Check(PreviewIndex == 1 && player != null && !nextMedia!.IsEnabled && !lastMedia!.IsEnabled, "Viewer next video and last boundary");
             await NavigatePreview("previous"); Check(PreviewIndex == 0 && previewImage != null, "Viewer previous photo");
             await NavigatePreview("last"); Check(PreviewIndex == 1, "Viewer last file");
+            await NavigatePreviewWheel(120); Check(PreviewIndex == 0 && previewImage != null, "Mouse wheel up selects previous photo");
+            await Task.Delay(200);
+            await NavigatePreviewWheel(-120); Check(PreviewIndex == 1 && player != null, "Mouse wheel down selects next video");
+            await Task.Delay(200);
+            await NavigatePreviewWheel(-120); Check(PreviewIndex == 1, "Mouse wheel respects end of list");
             StopPreview();
             ResizeVertical(-10000); ResizeHorizontal(leftColumn, -10000, false); await Task.Delay(100);
             Check(workspace.ColumnDefinitions[0].ActualWidth < 150 && leftColumn.RowDefinitions[0].ActualHeight < 110, "Panels shrink to 120 by 80 DIP");
@@ -66,6 +71,20 @@ public sealed partial class MainWindow
             var showing = planDialog.ShowAsync(); await Task.Delay(300);
             Check(planPanel.ActualWidth > 300 && planPanel.ActualHeight > 200, "Visual folder preview dialog renders");
             planDialog.Hide(); await showing;
+            outputItems.Clear();
+            for (var i = 0; i < 120; i++) outputItems.Add(new FileEntry { Path = Path.Combine(fixtureDirectory, "folder-" + i.ToString("D3")), IsDirectory = true });
+            UpdateOutputStatistics(); outputList.UpdateLayout(); await Task.Delay(150);
+            Check(outputStatistics.Text == T("FoldersCount") + ": 120", "Library footer counts folders");
+            var libraryScroll = FindScrollViewer(outputList)!;
+            libraryScroll.ChangeView(null, 950, null, true); await Task.Delay(150);
+            var previousOffset = libraryScroll.VerticalOffset;
+            Check(previousOffset > 500, "Library regression fixture is scrolled away from start");
+            var collection = outputList.ItemsSource;
+            RemoveOutputEntries(new[] { outputItems[22] }, previousOffset); await Task.Delay(150);
+            Check(ReferenceEquals(collection, outputList.ItemsSource) && outputItems.Count == 119, "Deleting library item updates the existing list");
+            Check(Math.Abs(libraryScroll.VerticalOffset - previousOffset) < 2, "Library deletion preserves scroll offset");
+            outputItems.Clear(); outputItems.Add(Entry(Path.Combine(fixtureDirectory, "camera.jpg"))); outputItems.Add(Entry(Path.Combine(fixtureDirectory, "sample.mp4"))); UpdateOutputStatistics();
+            Check(outputStatistics.Text == T("FilesCount") + ": 2", "Library footer counts files inside folder");
             await File.WriteAllTextAsync(report, JsonSerializer.Serialize(new { success = true, checks = results }, new JsonSerializerOptions { WriteIndented = true }));
         }
         catch (Exception ex) { await File.WriteAllTextAsync(report, JsonSerializer.Serialize(new { success = false, checks = results, error = ex.ToString() }, new JsonSerializerOptions { WriteIndented = true })); }

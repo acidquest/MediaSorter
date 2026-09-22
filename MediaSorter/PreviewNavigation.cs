@@ -13,6 +13,30 @@ public sealed partial class MainWindow
     private bool syncingPreviewSelection;
     private Button? firstMedia, previousMedia, nextMedia, lastMedia;
     private TextBlock? previewPosition;
+    private int previewWheelDelta;
+    private bool wheelNavigating;
+    private long lastWheelNavigation;
+
+    private void PreviewWheelChanged(object sender, PointerRoutedEventArgs e)
+    {
+        var properties = e.GetCurrentPoint(previewHost).Properties;
+        // In gallery mode the wheel scrolls thumbnails normally; media mode changes files.
+        if (busy || PreviewIndex < 0 || previewHost.Child is GridView || properties.IsHorizontalMouseWheel) return;
+        e.Handled = true;
+        _ = NavigatePreviewWheel(properties.MouseWheelDelta);
+    }
+    private async Task NavigatePreviewWheel(int delta)
+    {
+        if (busy || wheelNavigating || PreviewIndex < 0 || previewHost.Child is GridView || delta == 0) return;
+        if (Environment.TickCount64 - lastWheelNavigation < 180) return;
+        if (Math.Sign(previewWheelDelta) != Math.Sign(delta)) previewWheelDelta = 0;
+        previewWheelDelta += delta;
+        if (Math.Abs(previewWheelDelta) < 120) return;
+        var direction = previewWheelDelta > 0 ? "previous" : "next";
+        previewWheelDelta = 0; lastWheelNavigation = Environment.TickCount64; wheelNavigating = true;
+        try { await NavigatePreview(direction); }
+        finally { wheelNavigating = false; }
+    }
 
     private FrameworkElement BuildPreviewNavigation()
     {

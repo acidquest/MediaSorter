@@ -1,5 +1,6 @@
 {
   "EmbeddedDate": "Embedded creation date",
+  "FoldersCount": "Folders", "FilesCount": "Files",
   "Year": "year", "Month": "month", "Day": "day", "PatternGuide": "Folders and custom text — examples", "Format": "Format", "Size": "Size", "Dimensions": "Resolution", "Duration": "Duration", "Camera": "Camera", "Lens": "Lens", "Exposure": "Shutter speed", "Aperture": "Aperture", "ISO": "ISO", "FocalLength": "Focal length", "Location": "Folder",
   "Tagline": "A place for every memory", "Source": "Source files", "Output": "Organized library", "Settings": "Controls", "Preview": "Viewer",
   "FirstMedia": "First file", "PreviousMedia": "Previous file", "NextMedia": "Next file", "LastMedia": "Last file", "PlanFolders": "Destination folders", "PlanFiles": "Files to move", "PlanSize": "Total size", "PlanDestination": "Output folder", "PlanFolderList": "Destination folders", "PlanFileList": "Selected folder contents", "PlanRenamed": "Name conflict — will be renamed", "PlanBlocked": "Will not be moved", "PlanFrom": "From", "PlanFallback": "Date comes from file properties",
