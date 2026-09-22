@@ -81,9 +81,12 @@ public sealed partial class MainWindow : Window
     private Button Action(string key, Action action, string? glyph = null, bool lockWhileBusy = true)
     {
         var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
-        if (glyph != null) content.Children.Add(new FontIcon { Glyph = glyph, FontSize = 14 });
-        content.Children.Add(Text(T(key), 13));
-        var button = new Button { Content = content, Padding = new Thickness(12, 8, 12, 8) };
+        if (glyph != null) content.Children.Add(ActionIcon(key, glyph));
+        var iconOnly = key is "Up" or "Rename" or "Merge" or "Delete" or "Cut" or "Paste" or "ToMisc" or "Refresh" or "Browse" or "Save";
+        if (!iconOnly) content.Children.Add(Text(T(key), 13));
+        var button = new Button { Content = content, Height = 36, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(iconOnly ? 9 : 12, 6, iconOnly ? 9 : 12, 6) };
+        if (iconOnly) button.Width = 36;
+        ColorAction(button, key);
         button.Click += (_, _) => action();
         ToolTipService.SetToolTip(button, T(key));
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, T(key));
@@ -328,7 +331,7 @@ public sealed partial class MainWindow : Window
         footer.Children.Add(outputStatistics); UpdateOutputStatistics();
         tools.HorizontalAlignment = HorizontalAlignment.Right;
         var scroll = new ScrollViewer { Content = tools, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Right, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
-        ConfigureLibraryToolbar(tools, scroll);
+        libraryToolbar = tools;
         Grid.SetColumn(scroll, 1); footer.Children.Add(scroll); Grid.SetRow(footer, 2); grid.Children.Add(footer); return grid;
     }
     private UIElement BuildSettings()
@@ -337,10 +340,10 @@ public sealed partial class MainWindow : Window
         var organize = new StackPanel { Spacing = 10, Margin = new Thickness(2, 10, 2, 4) };
         organize.Children.Add(Text(T("Pattern"), 13, true));
         var patternBar = new Grid { ColumnSpacing = 7 }; patternBar.ColumnDefinitions.Add(new()); patternBar.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        pattern = new ComboBox { IsEditable = true, HorizontalAlignment = HorizontalAlignment.Stretch, ItemsSource = preferences.Patterns, Text = preferences.Pattern };
+        pattern = new ComboBox { IsEditable = true, Height = 36, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Stretch, ItemsSource = preferences.Patterns, Text = preferences.Pattern };
         pattern.SelectionChanged += (_, _) => UpdateExample(); pattern.TextSubmitted += (_, _) => UpdateExample(); pattern.LostFocus += (_, _) => UpdateExample(); operationControls.Add(pattern);
         patternBar.Children.Add(pattern); var save = Action("Save", SavePattern, "\uE74E"); Grid.SetColumn(save, 1); patternBar.Children.Add(save); organize.Children.Add(patternBar);
-        example = Text("", 14); organize.Children.Add(example); UpdateExample();
+        example = Text("", 14); ColorExample(example); organize.Children.Add(example); UpdateExample();
         var legend = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
         foreach (var (token, key) in new[] { ("yyyy / yy", "Year"), ("MM / mm", "Month"), ("dd", "Day") })
         {
@@ -351,11 +354,12 @@ public sealed partial class MainWindow : Window
         }
         organize.Children.Add(legend);
         var options = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14 };
-        filter = new ComboBox { ItemsSource = new[] { T("AllMedia"), T("Photos"), T("Videos") }, SelectedIndex = 0, MinWidth = 155 }; filter.SelectionChanged += (_, _) => { if (sourceList != null) _ = RefreshSource(); }; operationControls.Add(filter);
+        filter = new ComboBox { ItemsSource = new[] { T("AllMedia"), T("Photos"), T("Videos") }, SelectedIndex = 0, MinWidth = 155, Height = 36, VerticalAlignment = VerticalAlignment.Center }; filter.SelectionChanged += (_, _) => { if (sourceList != null) _ = RefreshSource(); }; operationControls.Add(filter);
         recursive = new CheckBox { Content = T("Recursive"), IsChecked = preferences.Recursive }; recursive.Click += (_, _) => { preferences.Recursive = recursive.IsChecked == true; SaveSettings(); _ = RefreshSource(); }; operationControls.Add(recursive);
-        options.Children.Add(filter); options.Children.Add(recursive); organize.Children.Add(options);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        var sort = Action("Sort", () => _ = Sort(), "\uE768"); sort.Background = accent; sort.Foreground = new SolidColorBrush(Colors.White); actions.Children.Add(sort); organize.Children.Add(actions);
+        recursive.VerticalAlignment = VerticalAlignment.Center;
+        options.Children.Add(filter); options.Children.Add(recursive);
+        var sort = Action("Sort", () => _ = Sort(), "\uE768"); options.Children.Add(sort);
+        organize.Children.Add(new ScrollViewer { Content = options, HorizontalScrollMode = ScrollMode.Enabled, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollMode = ScrollMode.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled });
         tabs.Items.Add(new PivotItem { Header = T("SortTab"), Content = new ScrollViewer { Content = organize } });
         info = Text(T("InfoEmpty"), 13); info.IsTextSelectionEnabled = true; info.Margin = new Thickness(4, 12, 4, 4);
         tabs.Items.Add(new PivotItem { Header = T("InfoTab"), Content = new ScrollViewer { Content = info } });

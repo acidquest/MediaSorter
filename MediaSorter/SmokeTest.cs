@@ -18,11 +18,14 @@ public sealed partial class MainWindow
             await Task.Delay(500);
             Check(root.IsLoaded && workspace.ActualWidth > 500 && panels.Count == 4, "Four panels loaded and measured");
             var toolbarLabels = libraryToolbar.Children.Cast<Microsoft.UI.Xaml.Controls.Button>().SelectMany(button => ((Microsoft.UI.Xaml.Controls.StackPanel)button.Content).Children.OfType<Microsoft.UI.Xaml.Controls.TextBlock>()).ToArray();
-            Check(libraryToolbarFullWidth > 300 && toolbarLabels.Length == 7, "Library toolbar measures all seven action labels");
-            UpdateLibraryToolbar(libraryToolbarFullWidth - 20);
-            Check(toolbarLabels.All(x => x.Visibility == Visibility.Collapsed), "Narrow library toolbar switches to icons");
-            UpdateLibraryToolbar(libraryToolbarFullWidth + 20);
-            Check(toolbarLabels.All(x => x.Visibility == Visibility.Visible), "Wide library toolbar restores labels");
+            Check(toolbarLabels.Length == 0 && libraryToolbar.Children.Count == 7, "Library actions always use icons without labels");
+            var compactButtons = operationControls.OfType<Microsoft.UI.Xaml.Controls.Button>().Where(button => button.Width == 36).ToArray();
+            Check(compactButtons.Length == 12 && compactButtons.All(button => button.Content is Microsoft.UI.Xaml.Controls.StackPanel content && !content.Children.OfType<Microsoft.UI.Xaml.Controls.TextBlock>().Any()), "Library, source, browse and save buttons are icon-only");
+            Check(libraryToolbar.Children.Cast<Microsoft.UI.Xaml.Controls.Button>().Count(button => ((Microsoft.UI.Xaml.Controls.StackPanel)button.Content).Children.OfType<Microsoft.UI.Xaml.Controls.PathIcon>().Any()) == 2, "Merge and Misc use distinct custom vector icons");
+            var saveButton = compactButtons.Single(button => Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(button) == T("Save"));
+            Check(Math.Abs(saveButton.ActualHeight - pattern.ActualHeight) < 1 && Math.Abs(saveButton.TransformToVisual(root).TransformPoint(default).Y - pattern.TransformToVisual(root).TransformPoint(default).Y) < 1, "Save button aligns exactly with pattern selector");
+            var sortButton = operationControls.OfType<Microsoft.UI.Xaml.Controls.Button>().Single(button => Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(button) == T("Sort"));
+            Check(ReferenceEquals(sortButton.Parent, filter.Parent) && ReferenceEquals(sortButton.Parent, recursive.Parent), "Sort action shares row with filter and recursive checkbox");
             Check(libraryToolbar.Children.Cast<Microsoft.UI.Xaml.Controls.Button>().All(button => Microsoft.UI.Xaml.Controls.ToolTipService.GetToolTip(button) != null && !string.IsNullOrEmpty(Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(button))), "Icon buttons retain tooltips and accessible names");
             await ShowEntry(Entry(Path.Combine(fixtureDirectory, "camera.jpg")));
             Check(previewImage?.Source != null, "JPEG preview decoded");
@@ -39,8 +42,11 @@ public sealed partial class MainWindow
                 Check(player == null && videoPlayer == null && previewImage?.Source != null, "Playing video to photo switch " + i);
             }
             root.RequestedTheme = ElementTheme.Dark; await Task.Delay(100);
+            var darkExampleColor = ((Microsoft.UI.Xaml.Media.SolidColorBrush)example.Foreground).Color;
+            var darkButtonColor = ((Microsoft.UI.Xaml.Media.SolidColorBrush)saveButton.Foreground).Color;
             Check(root.ActualTheme == ElementTheme.Dark && AppWindow.TitleBar.ButtonForegroundColor == Microsoft.UI.Colors.White, "Dark theme caption buttons");
             root.RequestedTheme = ElementTheme.Light; await Task.Delay(100);
+            Check(darkExampleColor != ((Microsoft.UI.Xaml.Media.SolidColorBrush)example.Foreground).Color && darkButtonColor != ((Microsoft.UI.Xaml.Media.SolidColorBrush)saveButton.Foreground).Color, "Example and action colors adapt to light and dark themes");
             Check(root.ActualTheme == ElementTheme.Light && AppWindow.TitleBar.ButtonForegroundColor != Microsoft.UI.Colors.White, "Light theme caption buttons");
             Check(!info.Text.Contains("Compression Type") && info.Text.Contains("2024-03-19"), "Metadata summary prioritizes shooting date");
             await ShowGallery(fixtureDirectory, CancellationToken.None);
