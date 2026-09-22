@@ -17,6 +17,8 @@ public sealed partial class MainWindow
         {
             await Task.Delay(500);
             Check(root.IsLoaded && workspace.ActualWidth > 500 && panels.Count == 4, "Four panels loaded and measured");
+            var nativeModules = System.Diagnostics.Process.GetCurrentProcess().Modules.Cast<System.Diagnostics.ProcessModule>().ToArray();
+            Check(new[] { "coreclr.dll", "Microsoft.ui.xaml.dll" }.All(name => nativeModules.Any(module => module.ModuleName.Equals(name, StringComparison.OrdinalIgnoreCase) && Path.GetDirectoryName(module.FileName)!.Equals(Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory), StringComparison.OrdinalIgnoreCase))), "Portable app loads .NET and WinUI from its own directory");
             var toolbarLabels = libraryToolbar.Children.Cast<Microsoft.UI.Xaml.Controls.Button>().SelectMany(button => ((Microsoft.UI.Xaml.Controls.StackPanel)button.Content).Children.OfType<Microsoft.UI.Xaml.Controls.TextBlock>()).ToArray();
             Check(toolbarLabels.Length == 0 && libraryToolbar.Children.Count == 7, "Library actions always use icons without labels");
             var compactButtons = operationControls.OfType<Microsoft.UI.Xaml.Controls.Button>().Where(button => button.Width == 36).ToArray();
