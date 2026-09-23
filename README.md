@@ -2,6 +2,8 @@
 
 Нативное приложение Windows на WinUI 3 для сортировки фото и видео по датам. C# / .NET 10, Windows App SDK 1.8. Переносимая сборка x64: Windows 10 2004+ / Windows 11.
 
+![Скриншот MediaSorter](MediaSorter/Assets/screenshot.png)
+
 ## Запуск
 
 После сборки запустите `artifacts/MediaSorter/MediaSorter.exe`. Для переноса на другой компьютер копируйте **всю папку**, не только EXE. .NET, WinUI и библиотека чтения метаданных включены в сборку. Установщик не требуется.
