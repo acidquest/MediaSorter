@@ -12,6 +12,7 @@ public sealed partial class MainWindow
     private ListView? navigationList;
     private bool syncingPreviewSelection;
     private Button? firstMedia, previousMedia, nextMedia, lastMedia;
+    private Button? previewDelete, previewCut, previewMisc;
     private TextBlock? previewPosition;
     private int previewWheelDelta;
     private bool wheelNavigating;
@@ -58,8 +59,13 @@ public sealed partial class MainWindow
         lastMedia = Nav("LastMedia", "\uE893", "last", VirtualKey.End);
         previewPosition = Text("0 / 0", 12, true); previewPosition.VerticalAlignment = VerticalAlignment.Center; previewPosition.MinWidth = 52; previewPosition.TextAlignment = TextAlignment.Center;
         bar.Children.Add(firstMedia); bar.Children.Add(previousMedia); bar.Children.Add(previewPosition); bar.Children.Add(nextMedia); bar.Children.Add(lastMedia);
+        bar.Children.Add(new Border { Width = 1, Height = 23, Margin = new Thickness(8, 0, 8, 0), Background = accent, Opacity = .45 });
+        previewDelete = Action("Delete", () => _ = DeletePreview(), "\uE74D");
+        previewCut = Action("Cut", () => _ = CutPreview(), "\uE8C6");
+        previewMisc = Action("ToMisc", () => _ = MovePreviewToMisc(), "\uE8C8");
+        bar.Children.Add(previewDelete); bar.Children.Add(previewCut); bar.Children.Add(previewMisc);
         UpdatePreviewNavigation();
-        return new ScrollViewer { Content = bar, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
+        return new ScrollViewer { Content = bar, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled };
     }
     private void SetPreviewItems(IEnumerable<FileEntry> entries, ListView? list)
     {
@@ -77,6 +83,49 @@ public sealed partial class MainWindow
         previousMedia!.IsEnabled = available && index > 0;
         nextMedia!.IsEnabled = available && index < previewItems.Count - 1;
         lastMedia!.IsEnabled = available && index != previewItems.Count - 1;
+        var target = PreviewActionTarget();
+        previewDelete?.IsEnabled = !busy && target != null && (!target.IsDirectory || (outputRoot.Length > 0 && MediaFiles.IsWithin(target.Path, outputRoot)));
+        previewCut?.IsEnabled = !busy && target is { IsDirectory: false } && !string.IsNullOrEmpty(outputRoot) && MediaFiles.IsWithin(target.Path, outputRoot);
+        previewMisc?.IsEnabled = !busy && target != null && !string.IsNullOrEmpty(outputRoot) && MediaFiles.IsWithin(target.Path, outputRoot) && !MediaFiles.IsWithin(target.Path, Path.Combine(outputRoot, MiscFolderName));
+    }
+    private FileEntry? PreviewActionTarget()
+    {
+        if (string.IsNullOrEmpty(selectedFile)) return null;
+        var path = selectedFile;
+        if (!(sourcePath.Length > 0 && MediaFiles.IsWithin(path, sourcePath)) && !(outputRoot.Length > 0 && MediaFiles.IsWithin(path, outputRoot))) return null;
+        var directory = Directory.Exists(path);
+        return directory || File.Exists(path) ? new FileEntry { Path = path, IsDirectory = directory } : null;
+    }
+    private async Task DeletePreview()
+    {
+        if (busy || PreviewActionTarget() is not { } target) return;
+        var candidates = previewItems.ToArray(); var index = PreviewIndex; var list = navigationList;
+        await DeleteEntries([target], outputRoot.Length == 0 || !MediaFiles.IsWithin(target.Path, outputRoot));
+        await RestorePreviewAfterAction(target, candidates, index, list);
+    }
+    private async Task CutPreview()
+    {
+        if (busy || PreviewActionTarget() is not { IsDirectory: false } target || outputRoot.Length == 0 || !MediaFiles.IsWithin(target.Path, outputRoot)) return;
+        var candidates = previewItems.ToArray(); var index = PreviewIndex; var list = navigationList;
+        await CutEntries([target]);
+        await RestorePreviewAfterAction(target, candidates, index, list);
+    }
+    private async Task MovePreviewToMisc()
+    {
+        if (busy || PreviewActionTarget() is not { } target || outputRoot.Length == 0 || !MediaFiles.IsWithin(target.Path, outputRoot) || MediaFiles.IsWithin(target.Path, Path.Combine(outputRoot, MiscFolderName))) return;
+        var candidates = previewItems.ToArray(); var index = PreviewIndex; var list = navigationList;
+        await MoveEntriesToMisc([target]);
+        await RestorePreviewAfterAction(target, candidates, index, list);
+    }
+    private async Task RestorePreviewAfterAction(FileEntry target, FileEntry[] candidates, int index, ListView? list)
+    {
+        if (busy) return;
+        if (target.IsDirectory && Directory.Exists(target.Path)) { await ShowEntry(target); return; }
+        var remaining = candidates.Where(x => File.Exists(x.Path)).ToArray();
+        SetPreviewItems(remaining, list);
+        if (!target.IsDirectory && File.Exists(target.Path)) { await ShowEntry(target); return; }
+        if (remaining.Length > 0) await ShowEntry(remaining[Math.Clamp(index, 0, remaining.Length - 1)]);
+        else UpdatePreviewNavigation();
     }
     private async Task NavigatePreview(string command)
     {

@@ -644,9 +644,15 @@ public sealed partial class MainWindow : Window
     private async Task Delete(bool fromSource = false)
     {
         var list = fromSource ? sourceList : outputList;
-        var allowedRoot = fromSource ? sourcePath : outputRoot;
         if (busy || list.SelectedItems.Count == 0) return;
         var selected = list.SelectedItems.Cast<FileEntry>().ToArray();
+        await DeleteEntries(selected, fromSource);
+    }
+    private async Task DeleteEntries(FileEntry[] selected, bool fromSource)
+    {
+        var list = fromSource ? sourceList : outputList;
+        var allowedRoot = fromSource ? sourcePath : outputRoot;
+        if (busy || selected.Length == 0) return;
         if (await Dialog(T("ConfirmDelete"), Text($"{selected.Length} {T("Selected")}\n\n{T("ConfirmDeleteBody")}"), T("Delete")) != ContentDialogResult.Primary) return;
         var savedOffset = FindScrollViewer(list)?.VerticalOffset ?? 0;
         var removed = new List<FileEntry>();

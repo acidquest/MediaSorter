@@ -7,13 +7,14 @@ public sealed partial class MainWindow
     private List<PlanItem> cutFiles = [];
     private const string MiscFolderName = "Разное";
 
-    private async void CutSelected()
+    private void CutSelected() => _ = CutEntries(outputList.SelectedItems.Cast<FileEntry>().ToArray());
+    private async Task CutEntries(FileEntry[] selected)
     {
         if (busy) return;
         try
         {
-            var selected = outputList.SelectedItems.Cast<FileEntry>().ToArray();
             if (selected.Length == 0 || selected.Any(x => x.IsDirectory)) throw new InvalidOperationException("SelectFiles");
+            if (selected.Any(x => !MediaFiles.IsWithin(x.Path, outputRoot))) throw new IOException("OutputInvalid");
             SetBusy(true, T("Working"));
             cutFiles = await Task.Run(() => selected.Select(x => FileTransferPlan.Snapshot(x.Path)).ToList());
             status.Text = $"{T("CutReady")}: {cutFiles.Count}. {T("PasteHint")}";
@@ -42,12 +43,12 @@ public sealed partial class MainWindow
         catch (Exception ex) { await Error(ex); }
         finally { SetBusy(false); }
     }
-    private async Task MoveToMisc()
+    private Task MoveToMisc() => MoveEntriesToMisc(outputList.SelectedItems.Count > 0 ? outputList.SelectedItems.Cast<FileEntry>().ToArray() : outputItems.ToArray());
+    private async Task MoveEntriesToMisc(FileEntry[] selected)
     {
         if (busy || string.IsNullOrWhiteSpace(outputRoot)) return;
         try
         {
-            var selected = outputList.SelectedItems.Count > 0 ? outputList.SelectedItems.Cast<FileEntry>().ToArray() : outputItems.ToArray();
             var destination = Path.Combine(outputRoot, MiscFolderName);
             SetBusy(true, T("Working")); var token = operation!.Token;
             var plan = await Task.Run(() => BuildMiscPlan(selected, destination, token), token);

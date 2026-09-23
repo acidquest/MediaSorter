@@ -22,7 +22,7 @@ public sealed partial class MainWindow
             var toolbarLabels = libraryToolbar.Children.Cast<Microsoft.UI.Xaml.Controls.Button>().SelectMany(button => ((Microsoft.UI.Xaml.Controls.StackPanel)button.Content).Children.OfType<Microsoft.UI.Xaml.Controls.TextBlock>()).ToArray();
             Check(toolbarLabels.Length == 0 && libraryToolbar.Children.Count == 7, "Library actions always use icons without labels");
             var compactButtons = operationControls.OfType<Microsoft.UI.Xaml.Controls.Button>().Where(button => button.Width == 36).ToArray();
-            Check(compactButtons.Length == 12 && compactButtons.All(button => button.Content is Microsoft.UI.Xaml.Controls.StackPanel content && !content.Children.OfType<Microsoft.UI.Xaml.Controls.TextBlock>().Any()), "Library, source, browse and save buttons are icon-only");
+            Check(compactButtons.Length == 15 && compactButtons.All(button => button.Content is Microsoft.UI.Xaml.Controls.StackPanel content && !content.Children.OfType<Microsoft.UI.Xaml.Controls.TextBlock>().Any()), "Library, source, browse, save and viewer actions are icon-only");
             Check(libraryToolbar.Children.Cast<Microsoft.UI.Xaml.Controls.Button>().Count(button => ((Microsoft.UI.Xaml.Controls.StackPanel)button.Content).Children.OfType<Microsoft.UI.Xaml.Controls.PathIcon>().Any()) == 2, "Merge and Misc use distinct custom vector icons");
             var saveButton = compactButtons.Single(button => Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(button) == T("Save"));
             Check(Math.Abs(saveButton.ActualHeight - pattern.ActualHeight) < 1 && Math.Abs(saveButton.TransformToVisual(root).TransformPoint(default).Y - pattern.TransformToVisual(root).TransformPoint(default).Y) < 1, "Save button aligns exactly with pattern selector");
@@ -33,6 +33,8 @@ public sealed partial class MainWindow
             while (toolbarParent != null && toolbarParent is not Microsoft.UI.Xaml.Controls.ScrollViewer) toolbarParent = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(toolbarParent);
             Check(toolbarParent is Microsoft.UI.Xaml.Controls.ScrollViewer toolbarViewport && toolbarViewport.VerticalScrollMode == Microsoft.UI.Xaml.Controls.ScrollMode.Disabled && toolbarViewport.VerticalScrollBarVisibility == Microsoft.UI.Xaml.Controls.ScrollBarVisibility.Disabled, "Library toolbar cannot show vertical scrollbar arrows");
             await ShowEntry(Entry(Path.Combine(fixtureDirectory, "camera.jpg")));
+            sourcePath = fixtureDirectory; UpdatePreviewNavigation();
+            Check(previewDelete!.IsEnabled && !previewCut!.IsEnabled && !previewMisc!.IsEnabled, "Source preview allows delete but not library transfers");
             Check(previewImage?.Source != null, "JPEG preview decoded");
             Check(Math.Abs(previewImage!.Width - previewHost.ActualWidth) < 2 && Math.Abs(previewImage.Height - previewHost.ActualHeight) < 2, "Photo fits preview viewport");
             AppWindow.Resize(new Windows.Graphics.SizeInt32(1200, 820)); await Task.Delay(200);
@@ -127,6 +129,12 @@ public sealed partial class MainWindow
             Check(outputList.SelectedItem is FileEntry selectedParent && selectedParent.Path == childPath, "Up selects the folder just exited");
             Check(libraryScroll.VerticalOffset > 500, "Up does not jump to the first folder");
             var miscSource = Path.Combine(childPath, "camera.jpg"); File.Copy(Path.Combine(fixtureDirectory, "camera.jpg"), miscSource);
+            await ShowEntry(Entry(miscSource));
+            Check(previewDelete!.IsEnabled && previewCut!.IsEnabled && previewMisc!.IsEnabled && PreviewActionTarget()?.Path == miscSource, "Viewer actions target opened library file even while parent folder is selected");
+            await CutPreview();
+            Check(cutFiles.Count == 1 && cutFiles[0].Source == miscSource && File.Exists(miscSource) && previewImage != null, "Viewer Cut queues opened file without moving it yet");
+            await ShowEntry(Entry(childPath, true));
+            Check(previewDelete!.IsEnabled && !previewCut!.IsEnabled && previewMisc!.IsEnabled, "Folder gallery enables delete and Misc but not file Cut");
             var miscPath = Path.Combine(outputRoot, MiscFolderName); Directory.CreateDirectory(miscPath);
             var existingMisc = Path.Combine(miscPath, "camera.jpg"); File.Copy(miscSource, existingMisc);
             var miscPlan = BuildMiscPlan(new[] { Entry(childPath, true), Entry(miscPath, true) }, miscPath, default);
